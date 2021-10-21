@@ -1,0 +1,32 @@
+#cloud-config
+ssh_authorized_keys:
+  - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDPmDuLkwMaipWKUtSRbrob+CDfNUvxdblCPNbnFbKkW welteki
+
+write_files:
+  - path: /etc/nixos/notify.nix
+    permissions: '0644'
+    content: |
+      {pkgs, ...}:
+      {
+        systemd.services.notify-nixos-infected = {
+          wantedBy = [ "multi-user.target" ];
+          before = [ "systemd-user-sessions.service" ];
+          wants = [ "network-online.target" ];
+          after = [ "network-online.target" ];
+
+          unitConfig.ConditionPathExists = [ "!/var/lib/nixos-infected" ];
+
+          serviceConfig = {
+            Type = "oneshot";
+            ExecStart = ''
+              ${pkgs.curl}/bin/curl \
+                -X POST \
+                "https://eny6y5l7e20g.x.pipedream.net"
+            '';
+            ExecStartPost = "${pkgs.coreutils}/bin/touch /var/lib/nixos-infected";
+          };
+        };
+      }
+    
+runcmd:
+  - curl https://raw.githubusercontent.com/elitak/nixos-infect/master/nixos-infect | NIXOS_IMPORT=./notify.nix NIX_CHANNEL=nixos-21.05 bash 2>&1 | tee /tmp/infect.log
