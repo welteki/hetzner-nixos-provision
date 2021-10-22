@@ -3,7 +3,7 @@
 
   inputs = {
     nixpkgs.url = "nixpkgs/nixos-21.05";
-    nixpkgs-terraform.url = "nixpkgs/nixos-unstable";
+    nixpkgs-unstable.url = "nixpkgs/nixos-unstable";
     utils.url = "github:numtide/flake-utils";
     flake-compat.url = "github:edolstra/flake-compat";
     flake-compat.flake = false;
@@ -12,17 +12,17 @@
   outputs = { self, nixpkgs, utils, ... }@inputs: {
     overlay =
       let
-        inherit (inputs) nixpkgs-terraform;
+        inherit (inputs) nixpkgs-unstable;
         inherit (nixpkgs) lib;
 
         tf-module = ./terraform;
       in
       final: prev:
         {
-          nixpkgs-terraform-pkgs = nixpkgs-terraform.legacyPackages.${final.system};
+          nixpkgs-unstable-pkgs = nixpkgs-unstable.legacyPackages.${final.system};
 
-          inherit (final.nixpkgs-terraform-pkgs)
-            terraform terraform-providers;
+          inherit (final.nixpkgs-unstable-pkgs)
+            terraform terraform-providers buildGoModule;
 
           terraform-with-plugins = final.terraform.withPlugins
             (plugins: lib.attrVals [ "hcloud" ] plugins);
@@ -41,6 +41,32 @@
               ${terraform} init \
                && ${terraform} $@
             '';
+
+          of-watchdog = final.buildGoModule rec {
+            pname = "of-watchdog";
+            version = "0.8.4";
+            rev = "bbd2e96214264d6b87cc97745ee9f604776dd80f";
+
+            src = final.fetchFromGitHub {
+              owner = "openfaas";
+              repo = "of-watchdog";
+              rev = version;
+              sha256 = "19kg0kf0wf04yapcnbyi58qlxrf1wzlckyxvnnyvpym44zvm7m6d";
+            };
+
+            vendorSha256 = null;
+
+            CGO_ENABLED = 0;
+
+            subPackages = [ "." ];
+
+            ldflags = [
+              "-s"
+              "-w"
+              "-X main.GitCommit=${rev}"
+              "-X main.Version=${version}"
+            ];
+          };
 
           provision-image = final.dockerTools.buildImage {
             name = "hcloud-provision";
@@ -74,7 +100,7 @@
     in
     {
       packages = {
-        inherit (pkgs) terraform-wrapped provision-image;
+        inherit (pkgs) terraform-wrapped provision-image of-watchdog;
       };
 
       devShell = pkgs.mkShell {
