@@ -27,9 +27,40 @@
           terraform-with-plugins = final.terraform.withPlugins
             (plugins: lib.attrVals [ "hcloud" ] plugins);
 
-          terraform-wrapped = final.writeShellScriptBin "terraform" ''
-            TF_DATA_DIR="$PWD/.terraform" ${final.terraform-with-plugins}/bin/terraform -chdir=${tf-module} $@
-          '';
+          terraform-wrapped =
+            let
+              terraform = "TF_DATA_DIR=\${TF_DATA_DIR:-$PWD/.terraform} ${final.terraform-with-plugins}/bin/terraform -chdir=$TF_WORKING_DIR";
+            in
+            final.writeShellScriptBin "terraform" ''
+              TF_WORKING_DIR=$(${final.coreutils}/bin/mktemp -tp /tmp -d terraform-run.XXXXX)
+
+              # Cleanup working dir on shell exit
+              trap '${final.coreutils}/bin/rm -rf -- "$TF_WORKING_DIR"' EXIT
+
+              ${final.coreutils}/bin/ln -sf ${tf-module}/* $TF_WORKING_DIR
+              ${terraform} init \
+               && ${terraform} $@
+            '';
+
+          provision-image = final.dockerTools.buildImage {
+            name = "hcloud-provision";
+            tag = "latest";
+
+            contents = [
+              final.bashInteractive
+              final.terraform-wrapped
+              final.cacert
+            ];
+
+            extraCommands = ''
+              # required to run terraform
+              mkdir -p tmp
+            '';
+
+            config = {
+              Cmd = [ "bash" ];
+            };
+          };
         };
 
   } // utils.lib.eachDefaultSystem (system:
@@ -43,7 +74,7 @@
     in
     {
       packages = {
-        inherit (pkgs) terraform-wrapped;
+        inherit (pkgs) terraform-wrapped provision-image;
       };
 
       devShell = pkgs.mkShell {
