@@ -14,6 +14,8 @@
       let
         inherit (inputs) nixpkgs-terraform;
         inherit (nixpkgs) lib;
+
+        tf-module = ./terraform;
       in
       final: prev:
         {
@@ -24,6 +26,10 @@
 
           terraform-with-plugins = final.terraform.withPlugins
             (plugins: lib.attrVals [ "hcloud" ] plugins);
+
+          terraform-wrapped = final.writeShellScriptBin "terraform" ''
+            TF_DATA_DIR="$PWD/.terraform" ${final.terraform-with-plugins}/bin/terraform -chdir=${tf-module} $@
+          '';
         };
 
   } // utils.lib.eachDefaultSystem (system:
@@ -36,6 +42,10 @@
       terraform = pkgs.terraform-with-plugins;
     in
     {
+      packages = {
+        inherit (pkgs) terraform-wrapped;
+      };
+
       devShell = pkgs.mkShell {
         buildInputs = [
           terraform
