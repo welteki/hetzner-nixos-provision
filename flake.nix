@@ -37,9 +37,13 @@
               # Cleanup working dir on shell exit
               trap '${final.coreutils}/bin/rm -rf -- "$TF_WORKING_DIR"' EXIT
 
+              if [ $TF_BACKEND_conn_str ]; then
+                BACKEND_CONFIG=-backend-config="conn_str=$TF_BACKEND_conn_str"
+              fi
+
               ${final.coreutils}/bin/ln -sf ${tf-module}/* $TF_WORKING_DIR
-              ${terraform} init \
-               && ${terraform} $@
+              ${terraform} init $BACKEND_CONFIG \
+                && ${terraform} $@
             '';
 
           of-watchdog = final.buildGoModule rec {
@@ -87,6 +91,47 @@
               Cmd = [ "bash" ];
             };
           };
+
+          provision-fn =
+            let
+              provision = final.writeShellScriptBin "terraform-provision" ''
+                export TF_BACKEND_conn_str=''${TF_BACKEND_conn_str:=$(${final.coreutils}/bin/cat /var/openfaas/secrets/tf_backend_conn_str)}
+                export TF_VAR_hc_token="''${TF_VAR_hc_token:-$(${final.coreutils}/bin/cat /var/openfaas/secrets/tf_var_hc_token)}"
+
+                ${final.terraform-wrapped}/bin/terraform workspace new $Http_Workspace \
+                  && TF_WORKSPACE=$Http_Workspace ${final.terraform-wrapped}/bin/terraform apply -input=false -auto-approve=true
+              '';
+            in
+            final.dockerTools.buildImage {
+              name = "hcloud-nixos-provision";
+              tag = "latest";
+
+              contents = [
+                final.cacert
+              ];
+
+              extraCommands = ''
+                # required to run terraform
+                mkdir -p tmp
+
+                mkdir -p var/openfaas/secrets
+              '';
+
+              config = {
+                Cmd = [ "${final.of-watchdog}/bin/of-watchdog" ];
+                Env = [
+                  "fprocess=${provision}/bin/terraform-provision"
+
+                  "exec_timeout=60s"
+                  "write_timeout=65s"
+                  "read_timeout=65s"
+
+                  "TF_IN_AUTOMATION=true"
+                  "TF_VAR_hc_token"
+                  "TF_BACKEND_conn_str"
+                ];
+              };
+            };
         };
 
   } // utils.lib.eachDefaultSystem (system:
@@ -100,7 +145,7 @@
     in
     {
       packages = {
-        inherit (pkgs) terraform-wrapped provision-image of-watchdog;
+        inherit (pkgs) terraform-wrapped provision-image of-watchdog provision-fn;
       };
 
       devShell = pkgs.mkShell {
