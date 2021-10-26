@@ -3,7 +3,7 @@
 
   inputs = {
     nixpkgs.url = "nixpkgs/nixos-21.05";
-    nixpkgs-unstable.url = "nixpkgs/nixos-unstable";
+    nixpkgs-unstable.url = "nixpkgs/nixpkgs-unstable";
     utils.url = "github:numtide/flake-utils";
     flake-compat.url = "github:edolstra/flake-compat";
     flake-compat.flake = false;
@@ -22,7 +22,7 @@
           nixpkgs-unstable-pkgs = nixpkgs-unstable.legacyPackages.${final.system};
 
           inherit (final.nixpkgs-unstable-pkgs)
-            terraform terraform-providers buildGoModule;
+            terraform terraform-providers faas-cli buildGoModule;
 
           terraform-with-plugins = final.terraform.withPlugins
             (plugins: lib.attrVals [ "hcloud" ] plugins);
@@ -106,6 +106,7 @@
       devShell = pkgs.mkShell {
         buildInputs = [
           terraform
+          pkgs.faas-cli
           pkgs.nixpkgs-fmt
         ];
       };
